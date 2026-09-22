@@ -1,9 +1,0 @@
-wrangler.jsonc
-.assetsignore
-.git/
-.github/
-*.zip
-README.md
-DOMAIN-SETUP.md
-CLOUDFLARE-DEPLOY.md
-supabase-schema.sql
