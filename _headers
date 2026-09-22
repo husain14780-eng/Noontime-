@@ -1,11 +1,5 @@
-/* Cloudflare Pages security headers */
-/*
-  These headers are intentionally compatible with the static Supabase browser client.
-*/
-
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   X-Frame-Options: SAMEORIGIN
-*/
