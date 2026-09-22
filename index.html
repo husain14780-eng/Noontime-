@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#16130f">
+  <title>NOOR & TIME — Attars & Watches</title>
+  <meta name="description" content="Discover refined attars and timeless watches. Easy Cash on Delivery shopping from NOOR & TIME.">
+  <meta name="robots" content="index,follow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="announcement">Free delivery messaging can go here • <strong>Cash on Delivery available</strong></div>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="#" id="brandLink" aria-label="NOOR & TIME home"><span>NOOR</span> & TIME</a>
+      <nav aria-label="Main navigation">
+        <button class="nav-link" id="shopBtn">Shop</button>
+        <button class="nav-link cart-nav" id="cartBtn">Cart <span class="pill" id="cartCount">0</span></button>
+        <button class="nav-link owner-link" id="ownerBtn">Owner</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero container">
+      <div class="hero-copy-wrap">
+        <p class="eyebrow">CURATED • EVERYDAY LUXURY</p>
+        <h1>Wear the moment.<br><span>Carry the scent.</span></h1>
+        <p class="hero-copy">A refined collection of attars and watches chosen for everyday style. Add your favourites, checkout in seconds, and pay on delivery.</p>
+        <div class="hero-actions">
+          <button class="primary-btn" id="heroShopBtn">Explore collection</button>
+          <button class="text-btn" id="heroCartBtn">View cart →</button>
+        </div>
+        <div class="trust-row">
+          <span>✓ COD</span><span>✓ Easy ordering</span><span>✓ Curated pieces</span>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="hero-glow"></div>
+        <div class="hero-watch">⌚</div>
+        <div class="hero-bottle">N&T<br><small>ATTAR</small></div>
+        <div class="hero-note">NOOR & TIME<br><span>SCENT · TIME · STYLE</span></div>
+      </div>
+    </section>
+
+    <section class="category-strip container" aria-label="Shop categories">
+      <button class="category-card" data-category-jump="attar"><span class="category-icon">✦</span><span><strong>Attars</strong><small>Rich, lasting scents</small></span><b>→</b></button>
+      <button class="category-card" data-category-jump="watch"><span class="category-icon">◷</span><span><strong>Watches</strong><small>Timeless daily pieces</small></span><b>→</b></button>
+      <button class="category-card" data-category-jump="all"><span class="category-icon">◆</span><span><strong>All products</strong><small>Explore the collection</small></span><b>→</b></button>
+    </section>
+
+    <section class="container shop-section" id="shopSection">
+      <div class="section-head">
+        <div><p class="eyebrow">THE COLLECTION</p><h2>Shop the edit</h2><p class="section-copy">Simple choices. Thoughtful details.</p></div>
+        <div class="filters" role="tablist" aria-label="Product categories">
+          <button class="filter-btn active" data-category="all">All</button>
+          <button class="filter-btn" data-category="attar">Attars</button>
+          <button class="filter-btn" data-category="watch">Watches</button>
+        </div>
+      </div>
+      <div id="productGrid" class="product-grid" aria-live="polite">
+        <div class="loading-grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+      </div>
+    </section>
+
+    <section class="service-band">
+      <div class="container service-grid">
+        <div><span>01</span><strong>Easy checkout</strong><p>Enter your delivery details and place a COD order.</p></div>
+        <div><span>02</span><strong>Order with confidence</strong><p>Your cart is checked against live stock before ordering.</p></div>
+        <div><span>03</span><strong>Owner managed</strong><p>Orders and inventory are managed securely from the dashboard.</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-top"><div><a class="brand" href="#">NOOR & TIME</a><p>Attars & watches for everyday moments.</p></div><div><strong>Shopping</strong><button data-category-jump="attar">Attars</button><button data-category-jump="watch">Watches</button><button id="footerCartBtn">Cart</button></div><div><strong>Support</strong><span>Cash on Delivery</span><span>Secure checkout</span><span>Owner managed</span></div></div>
+    <div class="container footer-bottom"><span>© <span id="year"></span> NOOR & TIME</span><span>Built for simple, reliable shopping.</span></div>
+  </footer>
+
+  <div class="modal-backdrop hidden" id="cartModal" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
+    <div class="modal cart-modal">
+      <button class="modal-close" data-close="cartModal" aria-label="Close">×</button>
+      <p class="eyebrow">YOUR BAG</p><h2 id="cartTitle">Cart</h2>
+      <div id="cartItems"></div>
+      <div class="cart-total"><span>Total</span><strong id="cartTotal">₹0</strong></div>
+      <button class="primary-btn full" id="checkoutBtn">Continue to checkout</button>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="checkoutModal" role="dialog" aria-modal="true" aria-labelledby="checkoutTitle">
+    <div class="modal">
+      <button class="modal-close" data-close="checkoutModal" aria-label="Close">×</button>
+      <p class="eyebrow">CASH ON DELIVERY</p><h2 id="checkoutTitle">Delivery details</h2>
+      <p class="muted checkout-intro">We use your details only to fulfil this order.</p>
+      <form id="checkoutForm" class="form">
+        <div class="two-col"><label>Full name<input name="customer_name" autocomplete="name" required maxlength="100"></label><label>Phone number<input name="phone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20"></label></div>
+        <label>Full address<textarea name="address" autocomplete="street-address" required maxlength="500"></textarea></label>
+        <div class="three-col"><label>City<input name="city" autocomplete="address-level2" required maxlength="80"></label><label>State<input name="state" autocomplete="address-level1" required maxlength="80"></label><label>PIN code<input name="pincode" inputmode="numeric" autocomplete="postal-code" required maxlength="10"></label></div>
+        <label>Order notes <span class="optional">(optional)</span><textarea name="notes" maxlength="300" placeholder="Landmark, delivery preference, etc."></textarea></label>
+        <div class="notice"><span>Payment</span><strong>Cash on Delivery</strong></div>
+        <div id="checkoutError" class="error-text hidden"></div>
+        <button class="primary-btn full" type="submit" id="placeOrderBtn">Place COD order</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <div class="modal small-modal"><button class="modal-close" data-close="loginModal" aria-label="Close">×</button><p class="eyebrow">PRIVATE AREA</p><h2 id="loginTitle">Owner login</h2><p class="muted">Sign in to manage products and incoming orders.</p><form id="loginForm" class="form"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div id="loginError" class="error-text hidden"></div><button class="primary-btn full" type="submit" id="loginSubmitBtn">Sign in</button></form></div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="ownerModal" role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
+    <div class="modal owner-modal">
+      <button class="modal-close" data-close="ownerModal" aria-label="Close">×</button>
+      <div class="owner-top"><div><p class="eyebrow">OWNER DASHBOARD</p><h2 id="ownerTitle">Store control</h2><p class="muted">Inventory, orders and fulfilment.</p></div><button class="ghost-btn" id="logoutBtn">Sign out</button></div>
+      <div class="owner-tabs"><button class="owner-tab active" data-tab="ordersTab">Orders <span id="newOrderBadge" class="pill hidden">0</span></button><button class="owner-tab" data-tab="productsTab">Products</button></div>
+      <section id="ordersTab" class="owner-panel"><div class="panel-head"><div><h3>Incoming orders</h3><p class="muted">New COD orders appear here automatically.</p></div><button class="ghost-btn" id="refreshOrdersBtn">Refresh</button></div><div id="ordersList" class="orders-list"></div></section>
+      <section id="productsTab" class="owner-panel hidden"><div class="panel-head"><div><h3>Products</h3><p class="muted">Add, edit, hide or delete items.</p></div><button class="primary-btn small" id="addProductBtn">+ Add product</button></div><div id="adminProductList" class="admin-product-list"></div></section>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="productModal" role="dialog" aria-modal="true" aria-labelledby="productModalTitle">
+    <div class="modal"><button class="modal-close" data-close="productModal" aria-label="Close">×</button><p class="eyebrow" id="productModalEyebrow">NEW PRODUCT</p><h2 id="productModalTitle">Add product</h2><form id="productForm" class="form"><input type="hidden" name="id"><div class="two-col"><label>Product name<input name="name" required maxlength="120"></label><label>Category<select name="category" required><option value="attar">Attar</option><option value="watch">Watch</option></select></label></div><label>Description<textarea name="description" maxlength="1000"></textarea></label><div class="three-col"><label>Price (₹)<input name="price" type="number" min="0" step="0.01" required></label><label>Stock<input name="stock" type="number" min="0" step="1" required></label><label>Status<select name="is_active"><option value="true">Visible</option><option value="false">Hidden</option></select></label></div><label>Product image<input name="image" type="file" accept="image/*"></label><div id="existingImageWrap" class="existing-image hidden"></div><div id="productError" class="error-text hidden"></div><button class="primary-btn full" type="submit">Save product</button></form></div>
+  </div>
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script><script src="app.js"></script>
+</body>
+</html>
