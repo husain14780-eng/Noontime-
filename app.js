@@ -1,175 +1,433 @@
 /* =========================================================
    NOOR & TIME — app.js
-   Supabase REST/Auth version
+   Complete frontend
+   Supabase REST/Auth/Storage version
    ========================================================= */
 
-const SUPABASE_URL = window.SUPABASE_URL;
-const SUPABASE_KEY = window.SUPABASE_ANON_KEY;
+"use strict";
 
-const API = `${SUPABASE_URL}/rest/v1`;
-const AUTH = `${SUPABASE_URL}/auth/v1`;
-const STORAGE = `${SUPABASE_URL}/storage/v1`;
+
+/* =========================================================
+   SUPABASE CONFIG
+   ========================================================= */
+
+const SUPABASE_URL =
+  String(window.SUPABASE_URL || "").replace(/\/+$/, "");
+
+const SUPABASE_KEY =
+  String(window.SUPABASE_ANON_KEY || "");
+
+const SUPABASE_LEGACY_KEY =
+  String(window.SUPABASE_LEGACY_ANON_KEY || "");
+
+const API =
+  `${SUPABASE_URL}/rest/v1`;
+
+const AUTH =
+  `${SUPABASE_URL}/auth/v1`;
+
+const STORAGE =
+  `${SUPABASE_URL}/storage/v1`;
+
+
+/* =========================================================
+   APP STATE
+   ========================================================= */
 
 const state = {
   products: [],
-  cart: JSON.parse(localStorage.getItem("cod_store_cart") || "[]"),
+  cart: [],
   currentFilter: "all",
-  accessToken: localStorage.getItem("noor_owner_token") || "",
+
+  accessToken:
+    localStorage.getItem("noor_owner_token") || "",
+
+  refreshToken:
+    localStorage.getItem("noor_owner_refresh") || "",
+
   owner: null,
+
   editingProduct: null,
+
   orderPoll: null,
-  knownOrderIds: new Set(),
-  newOrderCount: 0
+
+  knownOrderIds:
+    new Set(),
+
+  newOrderCount: 0,
+
+  refreshingSession: false,
+
+  loginInProgress: false
 };
 
 
 /* =========================================================
-   HELPERS
+   BASIC HELPERS
    ========================================================= */
 
-const $ = id => document.getElementById(id);
+function $(id) {
+  return document.getElementById(id);
+}
 
 function show(id) {
   const el = $(id);
-  if (el) el.classList.remove("hidden");
+  if (el) {
+    el.classList.remove("hidden");
+  }
 }
 
 function hide(id) {
   const el = $(id);
-  if (el) el.classList.add("hidden");
+  if (el) {
+    el.classList.add("hidden");
+  }
 }
 
 function money(value) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2
-  }).format(Number(value) || 0);
+  return new Intl.NumberFormat(
+    "en-IN",
+    {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 2
+    }
+  ).format(Number(value) || 0);
 }
 
 function escapeHtml(value = "") {
-  return String(value).replace(/[&<>"']/g, char => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[char]));
+  return String(value).replace(
+    /[&<>"']/g,
+    char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    }[char])
+  );
+}
+
+function safeId(value) {
+  return encodeURIComponent(
+    String(value)
+  );
 }
 
 function toast(message) {
   const el = $("toast");
-  if (!el) return;
 
-  el.textContent = message;
+  if (!el) {
+    console.log(message);
+    return;
+  }
+
+  el.textContent = String(message);
+
   show("toast");
 
-  clearTimeout(window.__noorToast);
+  clearTimeout(
+    window.__noorToastTimer
+  );
 
-  window.__noorToast = setTimeout(() => {
-    hide("toast");
-  }, 4000);
+  window.__noorToastTimer =
+    setTimeout(() => {
+      hide("toast");
+    }, 4500);
+}
+
+function setBusy(
+  id,
+  busy,
+  busyText = "Please wait..."
+) {
+  const button = $(id);
+
+  if (!button) return;
+
+  if (!button.dataset.originalText) {
+    button.dataset.originalText =
+      button.textContent;
+  }
+
+  button.disabled = !!busy;
+
+  if (busy) {
+    button.textContent = busyText;
+  } else {
+    button.textContent =
+      button.dataset.originalText;
+  }
+}
+
+function parseJsonSafely(text) {
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+
+/* =========================================================
+   CART
+   ========================================================= */
+
+function loadCartFromStorage() {
+  try {
+    const saved =
+      localStorage.getItem(
+        "cod_store_cart"
+      );
+
+    state.cart =
+      saved
+        ? JSON.parse(saved)
+        : [];
+
+    if (!Array.isArray(state.cart)) {
+      state.cart = [];
+    }
+
+  } catch {
+    state.cart = [];
+  }
 }
 
 function saveCart() {
   localStorage.setItem(
     "cod_store_cart",
-    JSON.stringify(state.cart)
+    JSON.stringify(
+      state.cart
+    )
   );
 
   renderCartCount();
 }
 
 function renderCartCount() {
-  const count = state.cart.reduce(
-    (total, item) => total + Number(item.quantity || 0),
-    0
-  );
+  const count =
+    state.cart.reduce(
+      (total, item) =>
+        total +
+        Number(item.quantity || 0),
+      0
+    );
 
-  const el = $("cartCount");
+  const el =
+    $("cartCount");
 
   if (el) {
-    el.textContent = count;
-  }
-}
-
-function setBusy(id, busy, text) {
-  const button = $(id);
-
-  if (!button) return;
-
-  if (!button.dataset.originalText) {
-    button.dataset.originalText = button.textContent;
-  }
-
-  button.disabled = busy;
-
-  if (busy && text) {
-    button.textContent = text;
-  } else if (!busy) {
-    button.textContent = button.dataset.originalText;
+    el.textContent =
+      String(count);
   }
 }
 
 
 /* =========================================================
-   SUPABASE REQUEST
+   AUTH STORAGE
    ========================================================= */
 
-async function request(url, options = {}) {
+function saveAuthSession(
+  session
+) {
+  state.accessToken =
+    session?.access_token || "";
 
-  const requestHeaders = {
+  state.refreshToken =
+    session?.refresh_token || "";
+
+  state.owner =
+    session?.user || state.owner || null;
+
+  if (state.accessToken) {
+    localStorage.setItem(
+      "noor_owner_token",
+      state.accessToken
+    );
+  } else {
+    localStorage.removeItem(
+      "noor_owner_token"
+    );
+  }
+
+  if (state.refreshToken) {
+    localStorage.setItem(
+      "noor_owner_refresh",
+      state.refreshToken
+    );
+  } else {
+    localStorage.removeItem(
+      "noor_owner_refresh"
+    );
+  }
+}
+
+function clearAuthSession() {
+  state.accessToken = "";
+  state.refreshToken = "";
+  state.owner = null;
+
+  localStorage.removeItem(
+    "noor_owner_token"
+  );
+
+  localStorage.removeItem(
+    "noor_owner_refresh"
+  );
+}
+
+
+/* =========================================================
+   SUPABASE REST REQUEST
+   ========================================================= */
+
+async function request(
+  url,
+  options = {},
+  allowRefresh = true
+) {
+  if (!SUPABASE_URL) {
+    throw new Error(
+      "Supabase URL is missing."
+    );
+  }
+
+  if (!SUPABASE_KEY) {
+    throw new Error(
+      "Supabase publishable key is missing."
+    );
+  }
+
+  const headers = {
     apikey: SUPABASE_KEY,
     ...(options.headers || {})
   };
 
-  /*
-   * For authenticated database requests use the current
-   * owner access token.
-   */
   if (state.accessToken) {
-    requestHeaders.Authorization =
+    headers.Authorization =
       `Bearer ${state.accessToken}`;
   }
 
-  const response = await fetch(url, {
-    method: options.method || "GET",
-    headers: requestHeaders,
-    body: options.body
-  });
-
-  const raw = await response.text();
-
-  let data;
+  let response;
 
   try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {
-    data = raw;
+    response =
+      await fetch(
+        url,
+        {
+          method:
+            options.method || "GET",
+
+          headers,
+
+          body:
+            options.body
+        }
+      );
+  } catch (networkError) {
+    throw new Error(
+      "Network error. Please check your internet connection."
+    );
+  }
+
+  const raw =
+    await response.text();
+
+  const data =
+    parseJsonSafely(raw);
+
+  /*
+   * Access token expired.
+   * Try refreshing once and retry the original request.
+   */
+  if (
+    response.status === 401 &&
+    allowRefresh &&
+    state.refreshToken &&
+    !state.refreshingSession
+  ) {
+    try {
+
+      await refreshOwnerSession();
+
+      return await request(
+        url,
+        options,
+        false
+      );
+
+    } catch {
+      clearAuthSession();
+
+      throw new Error(
+        "Your owner session expired. Please sign in again."
+      );
+    }
   }
 
   if (!response.ok) {
 
-    console.error("Supabase request failed:", {
-      url,
-      status: response.status,
-      data
-    });
+    console.error(
+      "Supabase request error:",
+      {
+        url,
+        status:
+          response.status,
+        data
+      }
+    );
 
-    const message =
+    let message =
       data?.error_description ||
       data?.msg ||
       data?.message ||
       data?.details ||
       data?.hint ||
-      data?.error ||
-      (typeof data === "string" ? data : null) ||
-      `Request failed (${response.status})`;
+      data?.error;
 
-    const error = new Error(message);
+    if (!message) {
 
-    error.status = response.status;
-    error.data = data;
+      if (
+        response.status === 401
+      ) {
+        message =
+          "Authentication failed.";
+      } else if (
+        response.status === 403
+      ) {
+        message =
+          "You do not have permission to perform this action.";
+      } else if (
+        response.status === 404
+      ) {
+        message =
+          "Requested resource was not found.";
+      } else if (
+        response.status === 429
+      ) {
+        message =
+          "Too many requests. Please wait a moment and try again.";
+      } else {
+        message =
+          `Request failed (${response.status}).`;
+      }
+    }
+
+    const error =
+      new Error(
+        String(message)
+      );
+
+    error.status =
+      response.status;
+
+    error.data =
+      data;
 
     throw error;
   }
@@ -179,20 +437,463 @@ async function request(url, options = {}) {
 
 
 /* =========================================================
-   PRODUCTS — STORE
+   AUTH — REFRESH SESSION
+   ========================================================= */
+
+async function refreshOwnerSession() {
+
+  if (
+    state.refreshingSession
+  ) {
+    return false;
+  }
+
+  if (
+    !state.refreshToken
+  ) {
+    return false;
+  }
+
+  state.refreshingSession =
+    true;
+
+  try {
+
+    const response =
+      await fetch(
+        `${AUTH}/token?grant_type=refresh_token`,
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            "apikey":
+              SUPABASE_KEY
+          },
+
+          body:
+            JSON.stringify({
+              refresh_token:
+                state.refreshToken
+            })
+        }
+      );
+
+    const raw =
+      await response.text();
+
+    const data =
+      parseJsonSafely(raw);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.error_description ||
+        data?.msg ||
+        data?.message ||
+        "Session refresh failed."
+      );
+    }
+
+    if (
+      !data?.access_token
+    ) {
+      throw new Error(
+        "No access token returned during refresh."
+      );
+    }
+
+    saveAuthSession({
+      access_token:
+        data.access_token,
+
+      refresh_token:
+        data.refresh_token ||
+        state.refreshToken,
+
+      user:
+        data.user ||
+        state.owner
+    });
+
+    return true;
+
+  } finally {
+
+    state.refreshingSession =
+      false;
+  }
+}
+
+
+/* =========================================================
+   AUTH — OWNER LOGIN
+   ========================================================= */
+
+async function ownerLogin(
+  email,
+  password
+) {
+  if (state.loginInProgress) {
+    throw new Error(
+      "A login request is already running."
+    );
+  }
+
+  state.loginInProgress = true;
+
+  setBusy(
+    "loginSubmitBtn",
+    true,
+    "Signing in..."
+  );
+
+  try {
+
+    /*
+     * Normalize ONLY the email.
+     * NEVER trim the password because spaces can
+     * legitimately be part of a password.
+     */
+    const cleanEmail =
+      String(email || "")
+        .trim()
+        .toLowerCase();
+
+    const cleanPassword =
+      String(password || "");
+
+    if (!cleanEmail) {
+      throw new Error(
+        "Enter your email address."
+      );
+    }
+
+    if (!cleanPassword) {
+      throw new Error(
+        "Enter your password."
+      );
+    }
+
+    console.log(
+      "NOOR & TIME: sending password login request..."
+    );
+
+    /*
+     * Supabase Auth password grant.
+     */
+    let response;
+
+    try {
+
+      response =
+        await fetch(
+          `${AUTH}/token?grant_type=password`,
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              "apikey":
+                SUPABASE_KEY
+            },
+
+            body:
+              JSON.stringify({
+                email:
+                  cleanEmail,
+
+                password:
+                  cleanPassword
+              })
+          }
+        );
+
+    } catch (networkError) {
+
+      throw new Error(
+        "Could not reach Supabase. Check your internet connection."
+      );
+    }
+
+    const raw =
+      await response.text();
+
+    const data =
+      parseJsonSafely(raw);
+
+    console.log(
+      "NOOR & TIME: Supabase Auth response",
+      {
+        status:
+          response.status,
+
+        code:
+          data?.code,
+
+        error:
+          data?.error,
+
+        message:
+          data?.msg ||
+          data?.message,
+
+        description:
+          data?.error_description
+      }
+    );
+
+    if (!response.ok) {
+
+      const authMessage =
+        data?.error_description ||
+        data?.msg ||
+        data?.message ||
+        data?.error;
+
+      /*
+       * Do not hide the actual Auth error.
+       */
+      if (
+        response.status === 400
+      ) {
+
+        throw new Error(
+          authMessage ||
+          "Supabase rejected the email/password login."
+        );
+      }
+
+      if (
+        response.status === 429
+      ) {
+
+        throw new Error(
+          "Too many login attempts. Please wait a few minutes before trying again."
+        );
+      }
+
+      throw new Error(
+        authMessage ||
+        `Supabase login failed (${response.status}).`
+      );
+    }
+
+    if (
+      !data ||
+      !data.access_token
+    ) {
+      throw new Error(
+        "Supabase accepted the login request but did not return a session."
+      );
+    }
+
+    /*
+     * Store both access and refresh tokens.
+     */
+    saveAuthSession({
+      access_token:
+        data.access_token,
+
+      refresh_token:
+        data.refresh_token ||
+        "",
+
+      user:
+        data.user ||
+        null
+    });
+
+    /*
+     * Verify the authenticated user directly.
+     */
+    let user;
+
+    try {
+
+      user =
+        await request(
+          `${AUTH}/user`
+        );
+
+    } catch (error) {
+
+      clearAuthSession();
+
+      throw new Error(
+        `Login succeeded but the user session could not be verified: ${error.message}`
+      );
+    }
+
+    if (!user?.id) {
+
+      clearAuthSession();
+
+      throw new Error(
+        "Supabase returned an invalid owner session."
+      );
+    }
+
+    state.owner =
+      user;
+
+    /*
+     * Verify profile role.
+     */
+    const profiles =
+      await request(
+        `${API}/profiles?select=id,role&id=eq.${safeId(user.id)}&limit=1`
+      );
+
+    if (
+      !Array.isArray(profiles) ||
+      !profiles.length
+    ) {
+
+      clearAuthSession();
+
+      throw new Error(
+        "This Supabase account is authenticated but has no owner profile."
+      );
+    }
+
+    if (
+      profiles[0].role !== "owner"
+    ) {
+
+      clearAuthSession();
+
+      throw new Error(
+        "This account is not marked as an owner."
+      );
+    }
+
+    return user;
+
+  } catch (error) {
+
+    console.error(
+      "NOOR & TIME OWNER LOGIN ERROR:",
+      error
+    );
+
+    clearAuthSession();
+
+    throw error;
+
+  } finally {
+
+    setBusy(
+      "loginSubmitBtn",
+      false
+    );
+
+    state.loginInProgress =
+      false;
+  }
+}
+
+
+/* =========================================================
+   AUTH — RESTORE SESSION
+   ========================================================= */
+
+async function checkOwner() {
+
+  if (
+    state.accessToken
+  ) {
+
+    try {
+
+      const user =
+        await request(
+          `${AUTH}/user`,
+          {},
+          true
+        );
+
+      if (!user?.id) {
+        throw new Error(
+          "No authenticated user."
+        );
+      }
+
+      const profiles =
+        await request(
+          `${API}/profiles?select=id,role&id=eq.${safeId(user.id)}&limit=1`
+        );
+
+      if (
+        !profiles?.length ||
+        profiles[0].role !== "owner"
+      ) {
+        throw new Error(
+          "User is not an owner."
+        );
+      }
+
+      state.owner =
+        user;
+
+      return true;
+
+    } catch (error) {
+
+      console.warn(
+        "Existing session unavailable:",
+        error
+      );
+
+      /*
+       * Try refresh once.
+       */
+      if (
+        state.refreshToken
+      ) {
+
+        try {
+
+          await refreshOwnerSession();
+
+          return await checkOwner();
+
+        } catch {
+          clearAuthSession();
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+
+/* =========================================================
+   PRODUCTS — PUBLIC
    ========================================================= */
 
 async function loadProducts() {
 
-  const grid = $("productGrid");
+  const grid =
+    $("productGrid");
 
   try {
 
-    const products = await request(
-      `${API}/products?select=*&is_active=eq.true&order=created_at.desc`
-    );
+    const products =
+      await request(
+        `${API}/products?select=*&is_active=eq.true&order=created_at.desc`
+      );
 
-    state.products = products || [];
+    state.products =
+      Array.isArray(products)
+        ? products
+        : [];
 
     reconcileCart();
 
@@ -200,14 +901,22 @@ async function loadProducts() {
 
   } catch (error) {
 
-    console.error("Product loading error:", error);
+    console.error(
+      "Product load error:",
+      error
+    );
 
     if (grid) {
+
       grid.innerHTML = `
         <div class="empty-state">
           <strong>Products could not be loaded.</strong>
           <br>
-          <small>${escapeHtml(error.message)}</small>
+          <small>
+            ${escapeHtml(
+              error.message
+            )}
+          </small>
         </div>
       `;
     }
@@ -216,58 +925,96 @@ async function loadProducts() {
 
 function reconcileCart() {
 
-  const products = new Map(
-    state.products.map(product => [
-      product.id,
-      product
-    ])
-  );
+  const productMap =
+    new Map(
+      state.products.map(
+        product => [
+          product.id,
+          product
+        ]
+      )
+    );
 
-  state.cart = state.cart
-    .map(item => {
+  state.cart =
+    state.cart
+      .map(item => {
 
-      const product = products.get(item.product_id);
+        const product =
+          productMap.get(
+            item.product_id
+          );
 
-      if (
-        !product ||
-        !product.is_active ||
-        Number(product.stock) <= 0
-      ) {
-        return null;
-      }
+        if (
+          !product ||
+          !product.is_active ||
+          Number(product.stock) <= 0
+        ) {
+          return null;
+        }
 
-      return {
-        product_id: product.id,
-        name: product.name,
-        price: Number(product.price),
-        image_url: product.image_url,
-        quantity: Math.min(
-          Number(item.quantity) || 1,
-          Number(product.stock)
-        )
-      };
-    })
-    .filter(Boolean);
+        const quantity =
+          Math.min(
+            Math.max(
+              1,
+              Number(
+                item.quantity
+              ) || 1
+            ),
+            Number(
+              product.stock
+            )
+          );
+
+        return {
+          product_id:
+            product.id,
+
+          name:
+            product.name,
+
+          price:
+            Number(
+              product.price
+            ),
+
+          image_url:
+            product.image_url,
+
+          quantity
+        };
+
+      })
+      .filter(Boolean);
 
   saveCart();
 }
 
 function renderProducts() {
 
-  const grid = $("productGrid");
+  const grid =
+    $("productGrid");
 
   if (!grid) return;
 
-  const products = state.products.filter(product => {
+  const filtered =
+    state.products.filter(
+      product => {
 
-    if (state.currentFilter === "all") {
-      return true;
-    }
+        if (
+          state.currentFilter ===
+          "all"
+        ) {
+          return true;
+        }
 
-    return product.category === state.currentFilter;
-  });
+        return (
+          product.category ===
+          state.currentFilter
+        );
+      }
+    );
 
-  if (!products.length) {
+  if (!filtered.length) {
 
     grid.innerHTML = `
       <div class="empty-state">
@@ -278,110 +1025,158 @@ function renderProducts() {
     return;
   }
 
-  grid.innerHTML = products.map(product => {
+  grid.innerHTML =
+    filtered.map(
+      product => {
 
-    const soldOut =
-      Number(product.stock) <= 0;
+        const soldOut =
+          Number(product.stock) <= 0;
 
-    return `
-      <article class="product-card">
+        return `
+          <article class="product-card">
 
-        ${
-          product.image_url
-            ? `
-              <img
-                class="product-image"
-                src="${escapeHtml(product.image_url)}"
-                alt="${escapeHtml(product.name)}"
-                loading="lazy"
-              >
-            `
-            : `
-              <div class="product-placeholder">
-                NO IMAGE
-              </div>
-            `
-        }
+            ${
+              product.image_url
+                ? `
+                  <img
+                    class="product-image"
+                    src="${escapeHtml(
+                      product.image_url
+                    )}"
+                    alt="${escapeHtml(
+                      product.name
+                    )}"
+                    loading="lazy"
+                  >
+                `
+                : `
+                  <div class="product-placeholder">
+                    NO IMAGE
+                  </div>
+                `
+            }
 
-        <div class="product-body">
+            <div class="product-body">
 
-          <div class="product-cat">
-            ${escapeHtml(product.category)}
-          </div>
-
-          <div class="product-name">
-            ${escapeHtml(product.name)}
-          </div>
-
-          <div class="product-desc">
-            ${escapeHtml(product.description || "")}
-          </div>
-
-          <div class="product-bottom">
-
-            <div>
-
-              <div class="price">
-                ${money(product.price)}
+              <div class="product-cat">
+                ${escapeHtml(
+                  product.category
+                )}
               </div>
 
-              <div class="cart-meta">
-                ${
-                  soldOut
-                    ? "Out of stock"
-                    : `${product.stock} in stock`
-                }
+              <div class="product-name">
+                ${escapeHtml(
+                  product.name
+                )}
+              </div>
+
+              <div class="product-desc">
+                ${escapeHtml(
+                  product.description || ""
+                )}
+              </div>
+
+              <div class="product-bottom">
+
+                <div>
+
+                  <div class="price">
+                    ${money(
+                      product.price
+                    )}
+                  </div>
+
+                  <div class="cart-meta">
+                    ${
+                      soldOut
+                        ? "Out of stock"
+                        : `${escapeHtml(
+                            product.stock
+                          )} in stock`
+                    }
+                  </div>
+
+                </div>
+
+                <button
+                  type="button"
+                  class="add-btn"
+                  data-add="${escapeHtml(
+                    product.id
+                  )}"
+                  ${
+                    soldOut
+                      ? "disabled"
+                      : ""
+                  }
+                >
+                  ${
+                    soldOut
+                      ? "Sold out"
+                      : "Add to cart"
+                  }
+                </button>
+
               </div>
 
             </div>
 
-            <button
-              class="add-btn"
-              data-add="${escapeHtml(product.id)}"
-              ${soldOut ? "disabled" : ""}
-            >
-              ${soldOut ? "Sold out" : "Add to cart"}
-            </button>
-
-          </div>
-
-        </div>
-
-      </article>
-    `;
-
-  }).join("");
+          </article>
+        `;
+      }
+    ).join("");
 }
 
 
 /* =========================================================
-   CART
+   CART ACTIONS
    ========================================================= */
 
 function addToCart(productId) {
 
-  const product = state.products.find(
-    item => item.id === productId
-  );
+  const product =
+    state.products.find(
+      item =>
+        item.id ===
+        productId
+    );
 
-  if (!product) return;
-
-  if (Number(product.stock) <= 0) {
-    toast("This product is out of stock.");
+  if (!product) {
+    toast(
+      "Product not found."
+    );
     return;
   }
 
-  const existing = state.cart.find(
-    item => item.product_id === productId
-  );
+  if (
+    Number(product.stock) <= 0
+  ) {
+    toast(
+      "This product is out of stock."
+    );
+    return;
+  }
+
+  const existing =
+    state.cart.find(
+      item =>
+        item.product_id ===
+        productId
+    );
 
   if (existing) {
 
     if (
-      existing.quantity >=
-      Number(product.stock)
+      Number(
+        existing.quantity
+      ) >=
+      Number(
+        product.stock
+      )
     ) {
-      toast("You cannot add more than the available stock.");
+      toast(
+        "You cannot add more than the available stock."
+      );
       return;
     }
 
@@ -390,10 +1185,20 @@ function addToCart(productId) {
   } else {
 
     state.cart.push({
-      product_id: product.id,
-      name: product.name,
-      price: Number(product.price),
-      image_url: product.image_url,
+      product_id:
+        product.id,
+
+      name:
+        product.name,
+
+      price:
+        Number(
+          product.price
+        ),
+
+      image_url:
+        product.image_url,
+
       quantity: 1
     });
   }
@@ -401,46 +1206,70 @@ function addToCart(productId) {
   saveCart();
   renderCart();
 
-  toast(`${product.name} added to cart.`);
+  toast(
+    `${product.name} added to cart.`
+  );
 }
 
-function changeQuantity(productId, amount) {
+function changeQuantity(
+  productId,
+  amount
+) {
 
-  const item = state.cart.find(
-    product => product.product_id === productId
-  );
+  const item =
+    state.cart.find(
+      cartItem =>
+        cartItem.product_id ===
+        productId
+    );
 
   if (!item) return;
 
-  const product = state.products.find(
-    product => product.id === productId
-  );
+  const product =
+    state.products.find(
+      p =>
+        p.id ===
+        productId
+    );
 
-  const max = product
-    ? Number(product.stock)
-    : 99;
+  const max =
+    product
+      ? Number(
+          product.stock
+        )
+      : 99;
 
-  item.quantity = Math.max(
-    0,
-    Math.min(
-      max,
-      Number(item.quantity) + amount
-    )
-  );
+  item.quantity =
+    Math.max(
+      0,
+      Math.min(
+        max,
+        Number(
+          item.quantity
+        ) + Number(amount)
+      )
+    );
 
-  state.cart = state.cart.filter(
-    item => item.quantity > 0
-  );
+  state.cart =
+    state.cart.filter(
+      cartItem =>
+        cartItem.quantity > 0
+    );
 
   saveCart();
   renderCart();
 }
 
-function removeFromCart(productId) {
+function removeFromCart(
+  productId
+) {
 
-  state.cart = state.cart.filter(
-    item => item.product_id !== productId
-  );
+  state.cart =
+    state.cart.filter(
+      item =>
+        item.product_id !==
+        productId
+    );
 
   saveCart();
   renderCart();
@@ -448,11 +1277,18 @@ function removeFromCart(productId) {
 
 function renderCart() {
 
-  const container = $("cartItems");
-  const totalElement = $("cartTotal");
-  const checkoutButton = $("checkoutBtn");
+  const container =
+    $("cartItems");
 
-  if (!container) return;
+  const totalEl =
+    $("cartTotal");
+
+  const checkoutButton =
+    $("checkoutBtn");
+
+  if (!container) {
+    return;
+  }
 
   if (!state.cart.length) {
 
@@ -462,114 +1298,142 @@ function renderCart() {
       </div>
     `;
 
-    if (totalElement) {
-      totalElement.textContent = money(0);
+    if (totalEl) {
+      totalEl.textContent =
+        money(0);
     }
 
     if (checkoutButton) {
-      checkoutButton.disabled = true;
+      checkoutButton.disabled =
+        true;
     }
 
     return;
   }
 
   if (checkoutButton) {
-    checkoutButton.disabled = false;
+    checkoutButton.disabled =
+      false;
   }
 
   let total = 0;
 
-  container.innerHTML = state.cart.map(item => {
+  container.innerHTML =
+    state.cart.map(
+      item => {
 
-    const lineTotal =
-      Number(item.price) *
-      Number(item.quantity);
+        const lineTotal =
+          Number(item.price) *
+          Number(item.quantity);
 
-    total += lineTotal;
+        total +=
+          lineTotal;
 
-    return `
-      <div class="cart-row">
+        return `
+          <div class="cart-row">
 
-        ${
-          item.image_url
-            ? `
-              <img
-                class="cart-thumb"
-                src="${escapeHtml(item.image_url)}"
-                alt=""
-              >
-            `
-            : `
-              <div class="cart-thumb"></div>
-            `
-        }
+            ${
+              item.image_url
+                ? `
+                  <img
+                    class="cart-thumb"
+                    src="${escapeHtml(
+                      item.image_url
+                    )}"
+                    alt=""
+                  >
+                `
+                : `
+                  <div class="cart-thumb"></div>
+                `
+            }
 
-        <div>
+            <div>
 
-          <div class="cart-name">
-            ${escapeHtml(item.name)}
-          </div>
+              <div class="cart-name">
+                ${escapeHtml(
+                  item.name
+                )}
+              </div>
 
-          <div class="cart-meta">
-            ${money(item.price)} each
-          </div>
+              <div class="cart-meta">
+                ${money(
+                  item.price
+                )} each
+              </div>
 
-          <div class="qty-controls">
+              <div class="qty-controls">
 
-            <button
-              class="qty-btn"
-              data-qty="${escapeHtml(item.product_id)}"
-              data-delta="-1"
-            >
-              −
-            </button>
+                <button
+                  type="button"
+                  class="qty-btn"
+                  data-qty="${escapeHtml(
+                    item.product_id
+                  )}"
+                  data-delta="-1"
+                >
+                  −
+                </button>
+
+                <strong>
+                  ${item.quantity}
+                </strong>
+
+                <button
+                  type="button"
+                  class="qty-btn"
+                  data-qty="${escapeHtml(
+                    item.product_id
+                  )}"
+                  data-delta="1"
+                >
+                  +
+                </button>
+
+                <button
+                  type="button"
+                  class="qty-btn"
+                  data-remove="${escapeHtml(
+                    item.product_id
+                  )}"
+                >
+                  ×
+                </button>
+
+              </div>
+
+            </div>
 
             <strong>
-              ${item.quantity}
+              ${money(
+                lineTotal
+              )}
             </strong>
 
-            <button
-              class="qty-btn"
-              data-qty="${escapeHtml(item.product_id)}"
-              data-delta="1"
-            >
-              +
-            </button>
-
-            <button
-              class="qty-btn"
-              data-remove="${escapeHtml(item.product_id)}"
-            >
-              ×
-            </button>
-
           </div>
+        `;
+      }
+    ).join("");
 
-        </div>
-
-        <strong>
-          ${money(lineTotal)}
-        </strong>
-
-      </div>
-    `;
-
-  }).join("");
-
-  if (totalElement) {
-    totalElement.textContent = money(total);
+  if (totalEl) {
+    totalEl.textContent =
+      money(total);
   }
 }
 
 
 /* =========================================================
-   COD CHECKOUT
+   CHECKOUT
    ========================================================= */
 
-async function placeOrder(form) {
+async function placeOrder(
+  form
+) {
 
   if (!state.cart.length) {
-    toast("Your cart is empty.");
+    toast(
+      "Your cart is empty."
+    );
     return;
   }
 
@@ -579,50 +1443,101 @@ async function placeOrder(form) {
     "Placing order..."
   );
 
-  hide("checkoutError");
+  hide(
+    "checkoutError"
+  );
 
   try {
 
-    const formData = new FormData(form);
+    const formData =
+      new FormData(form);
 
-    const items = state.cart.map(item => ({
-      product_id: item.product_id,
-      quantity: Number(item.quantity)
-    }));
+    const items =
+      state.cart.map(
+        item => ({
+          product_id:
+            item.product_id,
 
-    const result = await request(
-      `${API}/rpc/place_order`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          p_customer_name:
-            String(formData.get("customer_name") || "").trim(),
-
-          p_phone:
-            String(formData.get("phone") || "").trim(),
-
-          p_address:
-            String(formData.get("address") || "").trim(),
-
-          p_city:
-            String(formData.get("city") || "").trim(),
-
-          p_state:
-            String(formData.get("state") || "").trim(),
-
-          p_pincode:
-            String(formData.get("pincode") || "").trim(),
-
-          p_notes:
-            String(formData.get("notes") || "").trim() || null,
-
-          p_items: items
+          quantity:
+            Number(
+              item.quantity
+            )
         })
-      }
-    );
+      );
+
+    const payload = {
+
+      p_customer_name:
+        String(
+          formData.get(
+            "customer_name"
+          ) || ""
+        ).trim(),
+
+      p_phone:
+        String(
+          formData.get(
+            "phone"
+          ) || ""
+        ).trim(),
+
+      p_address:
+        String(
+          formData.get(
+            "address"
+          ) || ""
+        ).trim(),
+
+      p_city:
+        String(
+          formData.get(
+            "city"
+          ) || ""
+        ).trim(),
+
+      p_state:
+        String(
+          formData.get(
+            "state"
+          ) || ""
+        ).trim(),
+
+      p_pincode:
+        String(
+          formData.get(
+            "pincode"
+          ) || ""
+        ).trim(),
+
+      p_notes:
+        String(
+          formData.get(
+            "notes"
+          ) || ""
+        ).trim() || null,
+
+      p_items:
+        items
+    };
+
+    const result =
+      await request(
+        `${API}/rpc/place_order`,
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify(
+              payload
+            )
+        }
+      );
 
     const orderId =
       Array.isArray(result)
@@ -635,27 +1550,50 @@ async function placeOrder(form) {
 
     form.reset();
 
-    hide("checkoutModal");
-    hide("cartModal");
+    hide(
+      "checkoutModal"
+    );
 
-    toast(
-      `Order received successfully. Order ID: ${String(orderId).slice(0, 8).toUpperCase()}`
+    hide(
+      "cartModal"
     );
 
     await loadProducts();
 
+    toast(
+      `Order received successfully. Order ID: ${String(
+        orderId || ""
+      )
+        .slice(0, 8)
+        .toUpperCase()}`
+    );
+
   } catch (error) {
 
-    console.error("Checkout error:", error);
+    console.error(
+      "Checkout error:",
+      error
+    );
 
-    const errorBox = $("checkoutError");
+    const box =
+      $("checkoutError");
 
-    if (errorBox) {
-      errorBox.textContent =
+    if (box) {
+
+      box.textContent =
         error.message ||
         "Could not place the order.";
 
-      show("checkoutError");
+      show(
+        "checkoutError"
+      );
+
+    } else {
+
+      toast(
+        error.message ||
+        "Could not place the order."
+      );
     }
 
   } finally {
@@ -669,241 +1607,28 @@ async function placeOrder(form) {
 
 
 /* =========================================================
-   OWNER LOGIN — FIXED
-   ========================================================= */
-
-async function ownerLogin(email, password) {
-
-  setBusy(
-    "loginSubmitBtn",
-    true,
-    "Signing in..."
-  );
-
-  try {
-
-    const cleanEmail =
-      String(email || "").trim();
-
-    const cleanPassword =
-      String(password || "");
-
-    if (!cleanEmail) {
-      throw new Error(
-        "Please enter your email."
-      );
-    }
-
-    if (!cleanPassword) {
-      throw new Error(
-        "Please enter your password."
-      );
-    }
-
-    /*
-     * Supabase password authentication.
-     */
-    const response = await fetch(
-      `${AUTH}/token?grant_type=password`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": SUPABASE_KEY
-        },
-
-        body: JSON.stringify({
-          email: cleanEmail,
-          password: cleanPassword
-        })
-      }
-    );
-
-    const data =
-      await response.json().catch(() => ({}));
-
-    console.log(
-      "Supabase login response:",
-      response.status,
-      data
-    );
-
-    if (!response.ok) {
-
-      let message =
-        data?.error_description ||
-        data?.msg ||
-        data?.message ||
-        data?.error;
-
-      if (response.status === 400) {
-
-        message =
-          message ||
-          "Invalid login credentials. Check the email and password.";
-      }
-
-      throw new Error(
-        message ||
-        `Login failed (${response.status})`
-      );
-    }
-
-    if (!data.access_token) {
-      throw new Error(
-        "Supabase did not return an access token."
-      );
-    }
-
-    /*
-     * Save authenticated session.
-     */
-    state.accessToken =
-      data.access_token;
-
-    state.owner =
-      data.user || null;
-
-    localStorage.setItem(
-      "noor_owner_token",
-      state.accessToken
-    );
-
-    /*
-     * Verify owner role.
-     */
-    const profile =
-      await request(
-        `${API}/profiles?select=role&id=eq.${encodeURIComponent(data.user.id)}&limit=1`
-      );
-
-    if (
-      !profile ||
-      !profile.length ||
-      profile[0].role !== "owner"
-    ) {
-
-      state.accessToken = "";
-      state.owner = null;
-
-      localStorage.removeItem(
-        "noor_owner_token"
-      );
-
-      throw new Error(
-        "Login succeeded, but this account is not an owner account."
-      );
-    }
-
-    return data.user;
-
-  } catch (error) {
-
-    console.error(
-      "OWNER LOGIN ERROR:",
-      error
-    );
-
-    state.accessToken = "";
-    state.owner = null;
-
-    localStorage.removeItem(
-      "noor_owner_token"
-    );
-
-    throw error;
-
-  } finally {
-
-    setBusy(
-      "loginSubmitBtn",
-      false
-    );
-  }
-}
-
-
-/* =========================================================
-   CHECK EXISTING OWNER SESSION
-   ========================================================= */
-
-async function checkOwner() {
-
-  if (!state.accessToken) {
-    return false;
-  }
-
-  try {
-
-    const user =
-      await request(
-        `${AUTH}/user`
-      );
-
-    if (!user?.id) {
-      throw new Error(
-        "No authenticated user."
-      );
-    }
-
-    const profile =
-      await request(
-        `${API}/profiles?select=role&id=eq.${encodeURIComponent(user.id)}&limit=1`
-      );
-
-    if (
-      !profile ||
-      !profile.length ||
-      profile[0].role !== "owner"
-    ) {
-      throw new Error(
-        "Account is not an owner."
-      );
-    }
-
-    state.owner = user;
-
-    return true;
-
-  } catch (error) {
-
-    console.warn(
-      "Owner session invalid:",
-      error
-    );
-
-    state.accessToken = "";
-    state.owner = null;
-
-    localStorage.removeItem(
-      "noor_owner_token"
-    );
-
-    return false;
-  }
-}
-
-
-/* =========================================================
-   OPEN OWNER DASHBOARD
+   OWNER DASHBOARD
    ========================================================= */
 
 async function openOwner() {
 
-  const authenticated =
+  const valid =
     await checkOwner();
 
-  if (!authenticated) {
-
-    show("loginModal");
-
+  if (!valid) {
+    show(
+      "loginModal"
+    );
     return;
   }
 
-  hide("loginModal");
+  hide(
+    "loginModal"
+  );
 
-  show("ownerModal");
+  show(
+    "ownerModal"
+  );
 
   state.newOrderCount = 0;
 
@@ -914,11 +1639,6 @@ async function openOwner() {
   startOrderPolling();
 }
 
-
-/* =========================================================
-   OWNER ORDERS
-   ========================================================= */
-
 async function loadOwnerData() {
 
   await Promise.all([
@@ -927,32 +1647,51 @@ async function loadOwnerData() {
   ]);
 }
 
+
+/* =========================================================
+   ORDERS
+   ========================================================= */
+
 async function loadOrders() {
 
   const container =
     $("ordersList");
 
-  if (!container) return;
+  if (!container) {
+    return;
+  }
 
   try {
 
     const orders =
       await request(
         `${API}/orders?select=*,order_items(*)&order=created_at.desc`
-      ) || [];
+      );
+
+    const safeOrders =
+      Array.isArray(orders)
+        ? orders
+        : [];
 
     /*
-     * Detect new orders.
+     * Detect new orders only after
+     * the initial list has already been loaded.
      */
-    if (state.knownOrderIds.size) {
+    if (
+      state.knownOrderIds.size > 0
+    ) {
 
       const newOrders =
-        orders.filter(
+        safeOrders.filter(
           order =>
-            !state.knownOrderIds.has(order.id)
+            !state.knownOrderIds.has(
+              order.id
+            )
         );
 
-      if (newOrders.length) {
+      if (
+        newOrders.length
+      ) {
 
         state.newOrderCount +=
           newOrders.length;
@@ -971,10 +1710,13 @@ async function loadOrders() {
 
     state.knownOrderIds =
       new Set(
-        orders.map(order => order.id)
+        safeOrders.map(
+          order =>
+            order.id
+        )
       );
 
-    if (!orders.length) {
+    if (!safeOrders.length) {
 
       container.innerHTML = `
         <div class="empty-state">
@@ -986,131 +1728,191 @@ async function loadOrders() {
     }
 
     container.innerHTML =
-      orders.map(order => {
+      safeOrders.map(
+        order => {
 
-        const items =
-          order.order_items || [];
+          const items =
+            Array.isArray(
+              order.order_items
+            )
+              ? order.order_items
+              : [];
 
-        const itemText =
-          items.map(item => `
-            <div>
-              ${escapeHtml(item.product_name)}
-              × ${item.quantity}
-              — ${money(
-                Number(item.unit_price) *
-                Number(item.quantity)
-              )}
-            </div>
-          `).join("");
-
-        return `
-          <article class="order-card">
-
-            <div class="order-head">
-
-              <div>
-
-                <div class="product-cat">
-                  ORDER ${escapeHtml(
-                    order.id.slice(0, 8)
-                  )}
-                </div>
-
-                <strong>
+          const itemHtml =
+            items.map(
+              item => `
+                <div>
                   ${escapeHtml(
-                    order.customer_name
+                    item.product_name
                   )}
-                </strong>
-
-                <div class="cart-meta">
-                  ${escapeHtml(order.phone)}
-                  •
-                  ${new Date(
-                    order.created_at
-                  ).toLocaleString("en-IN")}
+                  × ${escapeHtml(
+                    item.quantity
+                  )}
+                  —
+                  ${money(
+                    Number(
+                      item.unit_price
+                    ) *
+                    Number(
+                      item.quantity
+                    )
+                  )}
                 </div>
+              `
+            ).join("");
+
+          const created =
+            order.created_at
+              ? new Date(
+                  order.created_at
+                ).toLocaleString(
+                  "en-IN"
+                )
+              : "";
+
+          return `
+            <article class="order-card">
+
+              <div class="order-head">
+
+                <div>
+
+                  <div class="product-cat">
+                    ORDER
+                    ${escapeHtml(
+                      String(
+                        order.id
+                      ).slice(
+                        0,
+                        8
+                      )
+                    )}
+                  </div>
+
+                  <strong>
+                    ${escapeHtml(
+                      order.customer_name
+                    )}
+                  </strong>
+
+                  <div class="cart-meta">
+                    ${escapeHtml(
+                      order.phone
+                    )}
+                    •
+                    ${escapeHtml(
+                      created
+                    )}
+                  </div>
+
+                </div>
+
+                <select
+                  class="status-select"
+                  data-order-status="${escapeHtml(
+                    order.id
+                  )}"
+                >
+
+                  ${
+                    [
+                      "new",
+                      "confirmed",
+                      "packed",
+                      "shipped",
+                      "delivered",
+                      "cancelled"
+                    ]
+                      .map(
+                        status => `
+                          <option
+                            value="${status}"
+                            ${
+                              order.status ===
+                              status
+                                ? "selected"
+                                : ""
+                            }
+                          >
+                            ${status.toUpperCase()}
+                          </option>
+                        `
+                      )
+                      .join("")
+                  }
+
+                </select>
 
               </div>
 
-              <select
-                class="status-select"
-                data-order-status="${escapeHtml(order.id)}"
-              >
+              <div class="order-items">
+                ${itemHtml}
+              </div>
 
-                ${[
-                  "new",
-                  "confirmed",
-                  "packed",
-                  "shipped",
-                  "delivered",
-                  "cancelled"
-                ].map(status => `
-                  <option
-                    value="${status}"
-                    ${
-                      order.status === status
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    ${status.toUpperCase()}
-                  </option>
-                `).join("")}
+              <div class="order-address">
 
-              </select>
+                <strong>
+                  ${money(
+                    order.total_amount
+                  )}
+                  • COD
+                </strong>
 
-            </div>
+                <br>
 
-            <div class="order-items">
-              ${itemText}
-            </div>
+                ${escapeHtml(
+                  order.address
+                )},
+                ${escapeHtml(
+                  order.city
+                )},
+                ${escapeHtml(
+                  order.state
+                )}
+                -
+                ${escapeHtml(
+                  order.pincode
+                )}
 
-            <div class="order-address">
+                ${
+                  order.notes
+                    ? `
+                      <br>
+                      Note:
+                      ${escapeHtml(
+                        order.notes
+                      )}
+                    `
+                    : ""
+                }
 
-              <strong>
-                ${money(order.total_amount)}
-                • COD
-              </strong>
+              </div>
 
-              <br>
-
-              ${escapeHtml(order.address)},
-              ${escapeHtml(order.city)},
-              ${escapeHtml(order.state)}
-              -
-              ${escapeHtml(order.pincode)}
-
-              ${
-                order.notes
-                  ? `
-                    <br>
-                    Note:
-                    ${escapeHtml(order.notes)}
-                  `
-                  : ""
-              }
-
-            </div>
-
-          </article>
-        `;
-
-      }).join("");
+            </article>
+          `;
+        }
+      ).join("");
 
   } catch (error) {
 
     console.error(
-      "Orders error:",
+      "Orders load error:",
       error
     );
 
     container.innerHTML = `
       <div class="empty-state">
+
         Could not load orders.
+
         <br>
+
         <small>
-          ${escapeHtml(error.message)}
+          ${escapeHtml(
+            error.message
+          )}
         </small>
+
       </div>
     `;
   }
@@ -1124,27 +1926,38 @@ async function updateOrderStatus(
   try {
 
     await request(
-      `${API}/orders?id=eq.${encodeURIComponent(orderId)}`,
+      `${API}/orders?id=eq.${safeId(
+        orderId
+      )}`,
       {
-        method: "PATCH",
+        method:
+          "PATCH",
 
         headers: {
           "Content-Type":
             "application/json",
 
-          "Prefer":
+          Prefer:
             "return=minimal"
         },
 
-        body: JSON.stringify({
-          status,
-          updated_at:
-            new Date().toISOString()
-        })
+        body:
+          JSON.stringify({
+            status:
+              String(
+                status
+              ),
+
+            updated_at:
+              new Date()
+                .toISOString()
+          })
       }
     );
 
-    toast("Order status updated.");
+    toast(
+      "Order status updated."
+    );
 
   } catch (error) {
 
@@ -1152,64 +1965,88 @@ async function updateOrderStatus(
       error.message ||
       "Could not update order."
     );
+
+    /*
+     * Reload to restore the actual status.
+     */
+    await loadOrders();
   }
 }
 
 
 /* =========================================================
-   ORDER BADGE / POLLING
+   ORDER POLLING
    ========================================================= */
-
-function updateOrderBadge() {
-
-  const badge =
-    $("newOrderBadge");
-
-  if (!badge) return;
-
-  if (state.newOrderCount > 0) {
-
-    badge.textContent =
-      state.newOrderCount;
-
-    show("newOrderBadge");
-
-  } else {
-
-    hide("newOrderBadge");
-  }
-}
 
 function startOrderPolling() {
 
   stopOrderPolling();
 
   state.orderPoll =
-    setInterval(async () => {
+    setInterval(
+      async () => {
 
-      const ownerModal =
-        $("ownerModal");
+        const modal =
+          $("ownerModal");
 
-      if (
-        state.owner &&
-        ownerModal &&
-        !ownerModal.classList.contains("hidden")
-      ) {
-        await loadOrders();
-      }
+        if (
+          state.owner &&
+          modal &&
+          !modal.classList.contains(
+            "hidden"
+          )
+        ) {
+          await loadOrders();
+        }
 
-    }, 10000);
+      },
+      10000
+    );
 }
 
 function stopOrderPolling() {
 
-  if (state.orderPoll) {
+  if (
+    state.orderPoll
+  ) {
 
     clearInterval(
       state.orderPoll
     );
 
-    state.orderPoll = null;
+    state.orderPoll =
+      null;
+  }
+}
+
+function updateOrderBadge() {
+
+  const badge =
+    $("newOrderBadge");
+
+  if (!badge) {
+    return;
+  }
+
+  if (
+    state.newOrderCount >
+    0
+  ) {
+
+    badge.textContent =
+      String(
+        state.newOrderCount
+      );
+
+    show(
+      "newOrderBadge"
+    );
+
+  } else {
+
+    hide(
+      "newOrderBadge"
+    );
   }
 }
 
@@ -1223,16 +2060,23 @@ async function loadAdminProducts() {
   const container =
     $("adminProductList");
 
-  if (!container) return;
+  if (!container) {
+    return;
+  }
 
   try {
 
     const products =
       await request(
         `${API}/products?select=*&order=created_at.desc`
-      ) || [];
+      );
 
-    if (!products.length) {
+    const list =
+      Array.isArray(products)
+        ? products
+        : [];
+
+    if (!list.length) {
 
       container.innerHTML = `
         <div class="empty-state">
@@ -1244,84 +2088,102 @@ async function loadAdminProducts() {
     }
 
     container.innerHTML =
-      products.map(product => `
+      list.map(
+        product => `
 
-        <article class="admin-product">
+          <article class="admin-product">
 
-          <div class="admin-product-main">
+            <div class="admin-product-main">
 
-            ${
-              product.image_url
-                ? `
-                  <img
-                    src="${escapeHtml(product.image_url)}"
-                    alt=""
-                    loading="lazy"
-                  >
-                `
-                : `
-                  <div class="admin-thumb"></div>
-                `
-            }
+              ${
+                product.image_url
+                  ? `
+                    <img
+                      src="${escapeHtml(
+                        product.image_url
+                      )}"
+                      alt=""
+                      loading="lazy"
+                    >
+                  `
+                  : `
+                    <div class="admin-thumb"></div>
+                  `
+              }
 
-            <div>
+              <div>
 
-              <strong>
-                ${escapeHtml(product.name)}
-              </strong>
+                <strong>
+                  ${escapeHtml(
+                    product.name
+                  )}
+                </strong>
 
-              <div class="cart-meta">
+                <div class="cart-meta">
 
-                ${escapeHtml(
-                  product.category
-                )}
+                  ${escapeHtml(
+                    product.category
+                  )}
 
-                •
-                ${money(product.price)}
+                  •
+                  ${money(
+                    product.price
+                  )}
 
-                • stock:
-                ${product.stock}
+                  • stock:
+                  ${escapeHtml(
+                    product.stock
+                  )}
 
-                •
-                ${
-                  product.is_active
-                    ? "Visible"
-                    : "Hidden"
-                }
+                  •
+                  ${
+                    product.is_active
+                      ? "Visible"
+                      : "Hidden"
+                  }
+
+                </div>
 
               </div>
 
             </div>
 
-          </div>
+            <div class="admin-actions">
 
-          <div class="admin-actions">
+              <button
+                type="button"
+                class="ghost-btn"
+                data-edit-product="${escapeHtml(
+                  product.id
+                )}"
+              >
+                Edit
+              </button>
 
-            <button
-              class="ghost-btn"
-              data-edit-product="${escapeHtml(product.id)}"
-            >
-              Edit
-            </button>
+              <button
+                type="button"
+                class="danger-btn"
+                data-delete-product="${escapeHtml(
+                  product.id
+                )}"
+              >
+                Delete
+              </button>
 
-            <button
-              class="danger-btn"
-              data-delete-product="${escapeHtml(product.id)}"
-            >
-              Delete
-            </button>
+            </div>
 
-          </div>
+          </article>
 
-        </article>
-
-      `).join("");
+        `
+      ).join("");
 
   } catch (error) {
 
     container.innerHTML = `
       <div class="empty-state">
-        ${escapeHtml(error.message)}
+        ${escapeHtml(
+          error.message
+        )}
       </div>
     `;
   }
@@ -1329,10 +2191,12 @@ async function loadAdminProducts() {
 
 
 /* =========================================================
-   PRODUCT FORM
+   PRODUCT EDITOR
    ========================================================= */
 
-function openProductForm(product = null) {
+function openProductForm(
+  product = null
+) {
 
   state.editingProduct =
     product;
@@ -1340,44 +2204,65 @@ function openProductForm(product = null) {
   const form =
     $("productForm");
 
-  if (!form) return;
+  if (!form) {
+    return;
+  }
 
   form.reset();
 
-  if (form.elements.id) {
+  if (
+    form.elements.id
+  ) {
     form.elements.id.value =
       product?.id || "";
   }
 
-  if (form.elements.name) {
+  if (
+    form.elements.name
+  ) {
     form.elements.name.value =
       product?.name || "";
   }
 
-  if (form.elements.category) {
+  if (
+    form.elements.category
+  ) {
     form.elements.category.value =
-      product?.category || "attar";
+      product?.category ||
+      "attar";
   }
 
-  if (form.elements.description) {
+  if (
+    form.elements.description
+  ) {
     form.elements.description.value =
-      product?.description || "";
+      product?.description ||
+      "";
   }
 
-  if (form.elements.price) {
+  if (
+    form.elements.price
+  ) {
     form.elements.price.value =
-      product?.price ?? "";
+      product?.price ??
+      "";
   }
 
-  if (form.elements.stock) {
+  if (
+    form.elements.stock
+  ) {
     form.elements.stock.value =
-      product?.stock ?? 0;
+      product?.stock ??
+      0;
   }
 
-  if (form.elements.is_active) {
+  if (
+    form.elements.is_active
+  ) {
     form.elements.is_active.value =
       String(
-        product?.is_active ?? true
+        product?.is_active ??
+        true
       );
   }
 
@@ -1385,6 +2270,7 @@ function openProductForm(product = null) {
     $("productModalTitle");
 
   if (title) {
+
     title.textContent =
       product
         ? "Edit product"
@@ -1395,6 +2281,7 @@ function openProductForm(product = null) {
     $("productModalEyebrow");
 
   if (eyebrow) {
+
     eyebrow.textContent =
       product
         ? "EDIT PRODUCT"
@@ -1405,14 +2292,22 @@ function openProductForm(product = null) {
     $("productError");
 
   if (errorBox) {
-    errorBox.textContent = "";
-    hide("productError");
+
+    errorBox.textContent =
+      "";
+
+    hide(
+      "productError"
+    );
   }
 
   const existing =
     $("existingImageWrap");
 
-  if (product?.image_url && existing) {
+  if (
+    product?.image_url &&
+    existing
+  ) {
 
     existing.innerHTML = `
       <div class="muted">
@@ -1420,38 +2315,111 @@ function openProductForm(product = null) {
       </div>
 
       <img
-        src="${escapeHtml(product.image_url)}"
+        src="${escapeHtml(
+          product.image_url
+        )}"
         alt=""
       >
     `;
 
-    show("existingImageWrap");
+    show(
+      "existingImageWrap"
+    );
 
   } else {
 
-    hide("existingImageWrap");
+    hide(
+      "existingImageWrap"
+    );
   }
 
-  show("productModal");
+  show(
+    "productModal"
+  );
 }
 
-async function saveProduct(form) {
+async function saveProduct(
+  form
+) {
 
   const formData =
     new FormData(form);
 
+  const name =
+    String(
+      formData.get(
+        "name"
+      ) || ""
+    ).trim();
+
+  if (!name) {
+    throw new Error(
+      "Enter a product name."
+    );
+  }
+
+  const price =
+    Number(
+      formData.get(
+        "price"
+      )
+    );
+
+  if (
+    !Number.isFinite(
+      price
+    ) ||
+    price < 0
+  ) {
+    throw new Error(
+      "Enter a valid price."
+    );
+  }
+
+  const stock =
+    Number(
+      formData.get(
+        "stock"
+      )
+    );
+
+  if (
+    !Number.isInteger(
+      stock
+    ) ||
+    stock < 0
+  ) {
+    throw new Error(
+      "Enter a valid stock quantity."
+    );
+  }
+
   const file =
-    formData.get("image");
+    formData.get(
+      "image"
+    );
 
-  if (file && file.size) {
+  if (
+    file &&
+    file.size
+  ) {
 
-    if (file.size > 5 * 1024 * 1024) {
+    if (
+      file.size >
+      5 * 1024 * 1024
+    ) {
       throw new Error(
         "Image must be 5 MB or smaller."
       );
     }
 
-    if (!file.type.startsWith("image/")) {
+    if (
+      !String(
+        file.type
+      ).startsWith(
+        "image/"
+      )
+    ) {
       throw new Error(
         "Please select an image file."
       );
@@ -1459,13 +2427,17 @@ async function saveProduct(form) {
   }
 
   let imageUrl =
-    state.editingProduct?.image_url ||
+    state.editingProduct
+      ?.image_url ||
     null;
 
   /*
-   * Upload image.
+   * Upload a new image if provided.
    */
-  if (file && file.size) {
+  if (
+    file &&
+    file.size
+  ) {
 
     const extension =
       (
@@ -1478,72 +2450,94 @@ async function saveProduct(form) {
         .replace(
           /[^a-z0-9]/g,
           ""
-        ) || "jpg";
+        ) ||
+      "jpg";
 
-    const path =
+    const filename =
       `${crypto.randomUUID()}.${extension}`;
 
     await request(
-      `${STORAGE}/object/product-images/${encodeURIComponent(path)}`,
+      `${STORAGE}/object/product-images/${encodeURIComponent(
+        filename
+      )}`,
       {
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
-          "Content-Type": file.type,
-          "x-upsert": "false"
+          "Content-Type":
+            file.type,
+
+          "x-upsert":
+            "false"
         },
 
-        body: file
+        body:
+          file
       }
     );
 
     imageUrl =
-      `${STORAGE}/object/public/product-images/${path}`;
+      `${STORAGE}/object/public/product-images/${filename}`;
   }
 
   const payload = {
 
-    name:
-      String(formData.get("name") || "").trim(),
+    name,
 
     category:
-      String(formData.get("category") || "attar"),
+      String(
+        formData.get(
+          "category"
+        ) ||
+        "attar"
+      ),
 
     description:
-      String(formData.get("description") || "").trim(),
+      String(
+        formData.get(
+          "description"
+        ) ||
+        ""
+      ).trim(),
 
-    price:
-      Number(formData.get("price")),
+    price,
 
-    stock:
-      Number(formData.get("stock")),
+    stock,
 
     is_active:
-      formData.get("is_active") === "true",
+      formData.get(
+        "is_active"
+      ) === "true",
 
     image_url:
       imageUrl
   };
 
-  if (state.editingProduct) {
+  if (
+    state.editingProduct
+  ) {
 
     await request(
-      `${API}/products?id=eq.${encodeURIComponent(
+      `${API}/products?id=eq.${safeId(
         state.editingProduct.id
       )}`,
       {
-        method: "PATCH",
+        method:
+          "PATCH",
 
         headers: {
           "Content-Type":
             "application/json",
 
-          "Prefer":
+          Prefer:
             "return=minimal"
         },
 
         body:
-          JSON.stringify(payload)
+          JSON.stringify(
+            payload
+          )
       }
     );
 
@@ -1552,18 +2546,21 @@ async function saveProduct(form) {
     await request(
       `${API}/products`,
       {
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
           "Content-Type":
             "application/json",
 
-          "Prefer":
+          Prefer:
             "return=minimal"
         },
 
         body:
-          JSON.stringify(payload)
+          JSON.stringify(
+            payload
+          )
       }
     );
   }
@@ -1571,24 +2568,34 @@ async function saveProduct(form) {
   state.editingProduct =
     null;
 
-  hide("productModal");
+  hide(
+    "productModal"
+  );
 
   await loadProducts();
   await loadAdminProducts();
 
-  toast("Product saved successfully.");
+  toast(
+    "Product saved successfully."
+  );
 }
 
-async function editProduct(productId) {
+async function editProduct(
+  productId
+) {
 
   try {
 
     const products =
       await request(
-        `${API}/products?select=*&id=eq.${encodeURIComponent(productId)}&limit=1`
+        `${API}/products?select=*&id=eq.${safeId(
+          productId
+        )}&limit=1`
       );
 
-    if (products?.[0]) {
+    if (
+      products?.[0]
+    ) {
       openProductForm(
         products[0]
       );
@@ -1596,14 +2603,18 @@ async function editProduct(productId) {
 
   } catch (error) {
 
-    toast(error.message);
+    toast(
+      error.message
+    );
   }
 }
 
-async function deleteProduct(productId) {
+async function deleteProduct(
+  productId
+) {
 
   if (
-    !confirm(
+    !window.confirm(
       "Delete this product?"
     )
   ) {
@@ -1613,16 +2624,21 @@ async function deleteProduct(productId) {
   try {
 
     await request(
-      `${API}/products?id=eq.${encodeURIComponent(productId)}`,
+      `${API}/products?id=eq.${safeId(
+        productId
+      )}`,
       {
-        method: "DELETE"
+        method:
+          "DELETE"
       }
     );
 
     await loadProducts();
     await loadAdminProducts();
 
-    toast("Product deleted.");
+    toast(
+      "Product deleted."
+    );
 
   } catch (error) {
 
@@ -1638,20 +2654,59 @@ async function deleteProduct(productId) {
    LOGOUT
    ========================================================= */
 
-function logoutOwner() {
+async function logoutOwner() {
 
-  state.accessToken = "";
-  state.owner = null;
+  try {
 
-  localStorage.removeItem(
-    "noor_owner_token"
-  );
+    if (
+      state.accessToken
+    ) {
 
-  stopOrderPolling();
+      await fetch(
+        `${AUTH}/logout`,
+        {
+          method:
+            "POST",
 
-  hide("ownerModal");
+          headers: {
+            "Content-Type":
+              "application/json",
 
-  toast("Signed out.");
+            "apikey":
+              SUPABASE_KEY,
+
+            "Authorization":
+              `Bearer ${state.accessToken}`
+          }
+        }
+      );
+    }
+
+  } catch (error) {
+
+    console.warn(
+      "Logout request failed:",
+      error
+    );
+
+  } finally {
+
+    clearAuthSession();
+
+    stopOrderPolling();
+
+    hide(
+      "ownerModal"
+    );
+
+    hide(
+      "loginModal"
+    );
+
+    toast(
+      "Signed out."
+    );
+  }
 }
 
 
@@ -1660,12 +2715,19 @@ function logoutOwner() {
    ========================================================= */
 
 function closeModal(id) {
-  if (id) hide(id);
+
+  if (!id) {
+    return;
+  }
+
+  hide(id);
 }
 
 function backdropClose(event) {
 
   if (
+    event.target &&
+    event.target.classList &&
     event.target.classList.contains(
       "modal-backdrop"
     )
@@ -1678,13 +2740,13 @@ function backdropClose(event) {
 
 
 /* =========================================================
-   EVENT LISTENERS
+   EVENT BINDING
    ========================================================= */
 
 function bindEvents() {
 
   /*
-   * Product/cart/order delegated clicks.
+   * Delegated clicks.
    */
   document.addEventListener(
     "click",
@@ -1758,12 +2820,13 @@ function bindEvents() {
 
         document
           .querySelectorAll(
-            ".filter-btn"
+            "[data-category]"
           )
-          .forEach(button =>
-            button.classList.remove(
-              "active"
-            )
+          .forEach(
+            button =>
+              button.classList.remove(
+                "active"
+              )
           );
 
         filterButton.classList.add(
@@ -1806,24 +2869,6 @@ function bindEvents() {
         return;
       }
 
-      const statusSelect =
-        event.target.closest(
-          "[data-order-status]"
-        );
-
-      if (
-        statusSelect &&
-        statusSelect.tagName === "SELECT"
-      ) {
-
-        await updateOrderStatus(
-          statusSelect.dataset.orderStatus,
-          statusSelect.value
-        );
-
-        return;
-      }
-
       const tabButton =
         event.target.closest(
           "[data-tab]"
@@ -1833,12 +2878,13 @@ function bindEvents() {
 
         document
           .querySelectorAll(
-            ".owner-tab"
+            "[data-tab]"
           )
-          .forEach(button =>
-            button.classList.remove(
-              "active"
-            )
+          .forEach(
+            button =>
+              button.classList.remove(
+                "active"
+              )
           );
 
         tabButton.classList.add(
@@ -1849,10 +2895,11 @@ function bindEvents() {
           .querySelectorAll(
             ".owner-panel"
           )
-          .forEach(panel =>
-            panel.classList.add(
-              "hidden"
-            )
+          .forEach(
+            panel =>
+              panel.classList.add(
+                "hidden"
+              )
           );
 
         show(
@@ -1865,7 +2912,9 @@ function bindEvents() {
   );
 
 
-  /* Cart */
+  /*
+   * Cart.
+   */
   const cartButton =
     $("cartBtn");
 
@@ -1876,13 +2925,18 @@ function bindEvents() {
       () => {
 
         renderCart();
-        show("cartModal");
+
+        show(
+          "cartModal"
+        );
       }
     );
   }
 
 
-  /* Checkout */
+  /*
+   * Checkout.
+   */
   const checkoutButton =
     $("checkoutBtn");
 
@@ -1893,20 +2947,33 @@ function bindEvents() {
       () => {
 
         if (!state.cart.length) {
-          toast("Your cart is empty.");
+
+          toast(
+            "Your cart is empty."
+          );
+
           return;
         }
 
-        hide("cartModal");
-        hide("checkoutError");
+        hide(
+          "cartModal"
+        );
 
-        show("checkoutModal");
+        hide(
+          "checkoutError"
+        );
+
+        show(
+          "checkoutModal"
+        );
       }
     );
   }
 
 
-  /* Checkout form */
+  /*
+   * Checkout submit.
+   */
   const checkoutForm =
     $("checkoutForm");
 
@@ -1919,14 +2986,16 @@ function bindEvents() {
         event.preventDefault();
 
         placeOrder(
-          event.target
+          event.currentTarget
         );
       }
     );
   }
 
 
-  /* Owner button */
+  /*
+   * Owner login button.
+   */
   const ownerButton =
     $("ownerBtn");
 
@@ -1937,17 +3006,43 @@ function bindEvents() {
       async () => {
 
         try {
-          await openOwner();
+
+          const valid =
+            await checkOwner();
+
+          if (valid) {
+
+            hide(
+              "loginModal"
+            );
+
+            await openOwner();
+
+          } else {
+
+            show(
+              "loginModal"
+            );
+          }
+
         } catch (error) {
-          console.error(error);
-          toast(error.message);
+
+          console.error(
+            error
+          );
+
+          show(
+            "loginModal"
+          );
         }
       }
     );
   }
 
 
-  /* Login form */
+  /*
+   * Login form.
+   */
   const loginForm =
     $("loginForm");
 
@@ -1959,43 +3054,61 @@ function bindEvents() {
 
         event.preventDefault();
 
-        hide("loginError");
+        hide(
+          "loginError"
+        );
 
         const formData =
           new FormData(
-            event.target
+            event.currentTarget
           );
 
         try {
 
           await ownerLogin(
-            formData.get("email"),
-            formData.get("password")
+            formData.get(
+              "email"
+            ),
+
+            formData.get(
+              "password"
+            )
           );
 
-          event.target.reset();
+          event.currentTarget.reset();
 
-          hide("loginModal");
+          hide(
+            "loginModal"
+          );
 
           await openOwner();
 
         } catch (error) {
 
           console.error(
-            "Login:",
+            "Login form error:",
             error
           );
 
-          const errorBox =
+          const box =
             $("loginError");
 
-          if (errorBox) {
+          if (box) {
 
-            errorBox.textContent =
+            box.textContent =
               error.message ||
               "Login failed.";
 
-            show("loginError");
+            show(
+              "loginError"
+            );
+
+          } else {
+
+            toast(
+              error.message ||
+              "Login failed."
+            );
           }
         }
       }
@@ -2003,7 +3116,9 @@ function bindEvents() {
   }
 
 
-  /* Logout */
+  /*
+   * Logout.
+   */
   const logoutButton =
     $("logoutBtn");
 
@@ -2016,7 +3131,9 @@ function bindEvents() {
   }
 
 
-  /* Add product */
+  /*
+   * Add product.
+   */
   const addProductButton =
     $("addProductBtn");
 
@@ -2024,49 +3141,154 @@ function bindEvents() {
 
     addProductButton.addEventListener(
       "click",
-      () => openProductForm()
+      () =>
+        openProductForm()
     );
   }
 
 
-  /* Refresh orders */
-  const refreshButton =
+  /*
+   * Refresh orders.
+   */
+  const refreshOrdersButton =
     $("refreshOrdersBtn");
 
-  if (refreshButton) {
+  if (refreshOrdersButton) {
 
-    refreshButton.addEventListener(
+    refreshOrdersButton.addEventListener(
       "click",
-      loadOrders
+      async () => {
+
+        try {
+
+          await loadOrders();
+
+          toast(
+            "Orders refreshed."
+          );
+
+        } catch (error) {
+
+          toast(
+            error.message
+          );
+        }
+      }
     );
   }
 
 
-  /* Shop buttons */
+  /*
+   * Product form.
+   */
+  const productForm =
+    $("productForm");
+
+  if (productForm) {
+
+    productForm.addEventListener(
+      "submit",
+      async event => {
+
+        event.preventDefault();
+
+        hide(
+          "productError"
+        );
+
+        try {
+
+          await saveProduct(
+            event.currentTarget
+          );
+
+        } catch (error) {
+
+          console.error(
+            "Product save error:",
+            error
+          );
+
+          const box =
+            $("productError");
+
+          if (box) {
+
+            box.textContent =
+              error.message ||
+              "Could not save product.";
+
+            show(
+              "productError"
+            );
+
+          } else {
+
+            toast(
+              error.message ||
+              "Could not save product."
+            );
+          }
+        }
+      }
+    );
+  }
+
+
+  /*
+   * Modal backdrop.
+   */
+  document
+    .querySelectorAll(
+      ".modal-backdrop"
+    )
+    .forEach(
+      modal =>
+        modal.addEventListener(
+          "click",
+          backdropClose
+        )
+    );
+
+
+  /*
+   * Shop buttons.
+   */
   [
     "shopBtn",
     "heroShopBtn"
-  ].forEach(id => {
+  ].forEach(
+    id => {
 
-    const button = $(id);
+      const button =
+        $(id);
 
-    if (button) {
+      if (button) {
 
-      button.addEventListener(
-        "click",
-        () => {
+        button.addEventListener(
+          "click",
+          () => {
 
-          $("shopSection")
-            ?.scrollIntoView({
-              behavior: "smooth"
-            });
-        }
-      );
+            const shop =
+              $("shopSection");
+
+            if (shop) {
+
+              shop.scrollIntoView({
+                behavior:
+                  "smooth"
+              });
+            }
+          }
+        );
+      }
     }
-  });
+  );
 
 
-  /* Hero cart */
+  /*
+   * Hero cart.
+   */
   const heroCart =
     $("heroCartBtn");
 
@@ -2077,13 +3299,18 @@ function bindEvents() {
       () => {
 
         renderCart();
-        show("cartModal");
+
+        show(
+          "cartModal"
+        );
       }
     );
   }
 
 
-  /* Footer cart */
+  /*
+   * Footer cart.
+   */
   const footerCart =
     $("footerCartBtn");
 
@@ -2094,45 +3321,61 @@ function bindEvents() {
       () => {
 
         renderCart();
-        show("cartModal");
+
+        show(
+          "cartModal"
+        );
       }
     );
   }
 
 
-  /* Category jump buttons */
+  /*
+   * Category jump.
+   */
   document
     .querySelectorAll(
       "[data-category-jump]"
     )
-    .forEach(button => {
+    .forEach(
+      button => {
 
-      button.addEventListener(
-        "click",
-        () => {
+        button.addEventListener(
+          "click",
+          () => {
 
-          const category =
-            button.dataset.categoryJump;
+            const category =
+              button.dataset
+                .categoryJump;
 
-          const filter =
-            document.querySelector(
-              `[data-category="${category}"]`
-            );
+            const filter =
+              document.querySelector(
+                `[data-category="${category}"]`
+              );
 
-          if (filter) {
-            filter.click();
+            if (filter) {
+              filter.click();
+            }
+
+            const shop =
+              $("shopSection");
+
+            if (shop) {
+
+              shop.scrollIntoView({
+                behavior:
+                  "smooth"
+              });
+            }
           }
-
-          $("shopSection")
-            ?.scrollIntoView({
-              behavior: "smooth"
-            });
-        }
-      );
-    });
+        );
+      }
+    );
 
 
-  /* Brand */
+  /*
+   * Brand link.
+   */
   const brand =
     $("brandLink");
 
@@ -2146,65 +3389,9 @@ function bindEvents() {
 
         window.scrollTo({
           top: 0,
-          behavior: "smooth"
+          behavior:
+            "smooth"
         });
-      }
-    );
-  }
-
-
-  /* Modal backdrops */
-  document
-    .querySelectorAll(
-      ".modal-backdrop"
-    )
-    .forEach(modal =>
-      modal.addEventListener(
-        "click",
-        backdropClose
-      )
-    );
-
-
-  /* Product form */
-  const productForm =
-    $("productForm");
-
-  if (productForm) {
-
-    productForm.addEventListener(
-      "submit",
-      async event => {
-
-        event.preventDefault();
-
-        hide("productError");
-
-        try {
-
-          await saveProduct(
-            event.target
-          );
-
-        } catch (error) {
-
-          console.error(
-            "Product save:",
-            error
-          );
-
-          const errorBox =
-            $("productError");
-
-          if (errorBox) {
-
-            errorBox.textContent =
-              error.message ||
-              "Could not save product.";
-
-            show("productError");
-          }
-        }
       }
     );
   }
@@ -2212,7 +3399,7 @@ function bindEvents() {
 
 
 /* =========================================================
-   START APPLICATION
+   BOOT
    ========================================================= */
 
 async function boot() {
@@ -2221,13 +3408,10 @@ async function boot() {
     "NOOR & TIME starting..."
   );
 
-  if (
-    !SUPABASE_URL ||
-    !SUPABASE_KEY
-  ) {
+  if (!SUPABASE_URL) {
 
     console.error(
-      "Supabase configuration missing."
+      "SUPABASE_URL is missing."
     );
 
     toast(
@@ -2237,25 +3421,56 @@ async function boot() {
     return;
   }
 
+  if (!SUPABASE_KEY) {
+
+    console.error(
+      "SUPABASE_ANON_KEY is missing."
+    );
+
+    toast(
+      "Store authentication configuration is missing."
+    );
+
+    return;
+  }
+
+  /*
+   * Load local cart.
+   */
+  loadCartFromStorage();
+
+  renderCartCount();
+
+  /*
+   * Set footer year.
+   */
   const year =
     $("year");
 
   if (year) {
     year.textContent =
-      new Date().getFullYear();
+      String(
+        new Date().getFullYear()
+      );
   }
 
-  renderCartCount();
-
+  /*
+   * Wire UI.
+   */
   bindEvents();
 
+  /*
+   * Load storefront.
+   */
   await loadProducts();
 
   /*
-   * If an owner was previously logged in,
-   * restore the session.
+   * Restore owner session.
    */
-  if (state.accessToken) {
+  if (
+    state.accessToken ||
+    state.refreshToken
+  ) {
 
     const valid =
       await checkOwner();
@@ -2263,7 +3478,7 @@ async function boot() {
     if (valid) {
 
       console.log(
-        "Owner session restored."
+        "NOOR & TIME: owner session restored."
       );
     }
   }
@@ -2275,20 +3490,23 @@ async function boot() {
 
 
 /* =========================================================
-   DOM READY
+   START
    ========================================================= */
 
 if (
-  document.readyState === "loading"
+  document.readyState ===
+  "loading"
 ) {
 
   document.addEventListener(
     "DOMContentLoaded",
     boot,
-    { once: true }
+    {
+      once: true
+    }
   );
 
 } else {
 
   boot();
-    }
+         }
