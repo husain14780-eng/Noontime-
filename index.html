@@ -63,12 +63,28 @@
           <button class="filter-btn" data-category="watch">Watches</button>
         </div>
       </div>
-      <input
-  id="productSearch"
-  type="search"
-  placeholder="Search products..."
-  autocomplete="off"
->
+      <div class="product-search-wrap">
+  <div class="product-search">
+    <span class="search-icon">⌕</span>
+
+    <input
+      id="productSearch"
+      type="search"
+      placeholder="Search attars, watches..."
+      autocomplete="off"
+      aria-label="Search products"
+    >
+
+    <button
+      type="button"
+      class="search-clear"
+      id="clearProductSearch"
+      aria-label="Clear search"
+    >
+      ×
+    </button>
+  </div>
+      </div>
       <div id="productGrid" class="product-grid" aria-live="polite">
         <div class="loading-grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
       </div>
