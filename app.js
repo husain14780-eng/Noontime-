@@ -1487,7 +1487,46 @@ function bindEvents(){
   /* Product search */
   const searchInput=$("productSearch");
 
-  if(searchInput){
+  if(searchInput){const searchInput=$("productSearch");
+const clearSearch=$("clearProductSearch");
+
+if(searchInput){
+
+  searchInput.addEventListener(
+    "input",
+    e=>{
+      state.searchQuery=e.target.value;
+      
+      if(clearSearch){
+        clearSearch.classList.toggle(
+          "show",
+          e.target.value.length > 0
+        );
+      }
+
+      renderProducts();
+    }
+  );
+}
+
+if(clearSearch){
+
+  clearSearch.addEventListener(
+    "click",
+    ()=>{
+      if(searchInput){
+        searchInput.value="";
+        searchInput.focus();
+      }
+
+      state.searchQuery="";
+
+      clearSearch.classList.remove("show");
+
+      renderProducts();
+    }
+  );
+}
 
     searchInput.addEventListener(
       "input",
